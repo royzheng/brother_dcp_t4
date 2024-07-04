@@ -1,0 +1,15 @@
+version: '3.5.0-2'
+
+services:
+  airprint:
+    container_name: airprint
+    image: royzheng/brother_dcp_t4:latest
+    build: .
+    restart: always
+    network_mode: "host"
+    environment:
+      CUPSADMIN: admin
+      CUPSPASSWORD: admin
+    volumes:
+      - "./services:/services"
+      - "./config:/config"
