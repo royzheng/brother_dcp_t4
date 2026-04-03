@@ -1,40 +1,49 @@
 #!/bin/sh
-set -e
-set -x
+set -eu
 
-# Is CUPSADMIN set? If not, set to default
-if [ -z "$CUPSADMIN" ]; then
-    CUPSADMIN="admin"
+CUPSADMIN="${CUPSADMIN:-admin}"
+CUPSPASSWORD="${CUPSPASSWORD:-$CUPSADMIN}"
+TZ="${TZ:-Etc/UTC}"
+
+configure_timezone() {
+    if [ -f "/usr/share/zoneinfo/$TZ" ]; then
+        ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
+        printf '%s\n' "$TZ" > /etc/timezone
+        return
+    fi
+
+    printf 'warning: timezone "%s" not found, falling back to Etc/UTC\n' "$TZ" >&2
+    TZ="Etc/UTC"
+    export TZ
+    ln -snf /usr/share/zoneinfo/Etc/UTC /etc/localtime
+    printf 'Etc/UTC\n' > /etc/timezone
+}
+
+configure_timezone
+
+if ! id "$CUPSADMIN" >/dev/null 2>&1; then
+    useradd -r -G lpadmin -M "$CUPSADMIN"
 fi
+printf '%s:%s\n' "$CUPSADMIN" "$CUPSPASSWORD" | chpasswd
 
-# Is CUPSPASSWORD set? If not, set to $CUPSADMIN
-if [ -z "$CUPSPASSWORD" ]; then
-    CUPSPASSWORD=$CUPSADMIN
-fi
-
-if [ $(grep -ci $CUPSADMIN /etc/shadow) -eq 0 ]; then
-    #adduser -S -G lpadmin --no-create-home $CUPSADMIN
-    useradd -r -G lpadmin -M $CUPSADMIN
-fi
-echo $CUPSADMIN:$CUPSPASSWORD | chpasswd
-
-mkdir -p /config/ppd
-mkdir -p /services
-rm -rf /etc/avahi/services/*
+install -d -m 755 /config /config/ppd /services /etc/avahi/services
+rm -f /etc/avahi/services/*.service
 rm -rf /etc/cups/ppd
-ln -s /config/ppd /etc/cups
+ln -s /config/ppd /etc/cups/ppd
 
-if [ `ls -l /services/*.service 2>/dev/null | wc -l` -gt 0 ]; then
-	cp -f /services/*.service /etc/avahi/services/
+if find /services -maxdepth 1 -name '*.service' -print -quit | grep -q .; then
+    cp -f /services/*.service /etc/avahi/services/
 fi
 
-if [ `ls -l /config/printers.conf 2>/dev/null | wc -l` -eq 0 ]; then
+if [ ! -f /config/printers.conf ]; then
     touch /config/printers.conf
 fi
 cp /config/printers.conf /etc/cups/printers.conf
 
-if [ `ls -l /config/cupsd.conf 2>/dev/null | wc -l` -ne 0 ]; then
+if [ -f /config/cupsd.conf ]; then
     cp /config/cupsd.conf /etc/cups/cupsd.conf
+else
+    cp /etc/cups/cupsd.conf /config/cupsd.conf
 fi
 
 /usr/sbin/avahi-daemon --daemonize

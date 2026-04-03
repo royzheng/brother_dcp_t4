@@ -124,126 +124,130 @@ class AirPrintGenerate(object):
         printers = conn.getPrinters()
         
         for p, v in list(printers.items()):
-            if v['printer-is-shared']:
-                attrs = conn.getPrinterAttributes(p)
-                uri = urlparse.urlparse(v['printer-uri-supported'])
+            if not v.get('printer-is-shared'):
+                continue
 
-                tree = ElementTree()
-                tree.parse(StringIO(XML_TEMPLATE.replace('\n', '').replace('\r', '').replace('\t', '')))
+            printer_uri = v.get('printer-uri-supported')
+            if not printer_uri:
+                continue
 
-                name = tree.find('name')
-                name.text = 'AirPrint %s @ %%h' % (p)
+            attrs = conn.getPrinterAttributes(p)
+            uri = urlparse.urlparse(printer_uri)
 
-                service = tree.find('service')
+            tree = ElementTree()
+            tree.parse(StringIO(XML_TEMPLATE.replace('\n', '').replace('\r', '').replace('\t', '')))
 
-                port = service.find('port')
-                port_no = None
-                if hasattr(uri, 'port'):
-                  port_no = uri.port
-                if not port_no:
-                    port_no = self.port
-                if not port_no:
-                    port_no = cups.getPort()
-                port.text = '%d' % port_no
+            name = tree.find('name')
+            name.text = 'AirPrint %s @ %%h' % (p)
 
-                if hasattr(uri, 'path'):
-                  rp = uri.path
+            service = tree.find('service')
+
+            port = service.find('port')
+            port_no = None
+            if hasattr(uri, 'port'):
+              port_no = uri.port
+            if not port_no:
+                port_no = self.port
+            if not port_no:
+                port_no = cups.getPort()
+            port.text = '%d' % port_no
+
+            if hasattr(uri, 'path'):
+              rp = uri.path
+            else:
+              rp = uri[2]
+            
+            re_match = re.match(r'^//(.*):(\d+)(/.*)', rp)
+            if re_match:
+              rp = re_match.group(3)
+            
+            #Remove leading slashes from path
+            #TODO XXX FIXME I'm worried this will match broken urlparse
+            #results as well (for instance if they don't include a port)
+            #the xml would be malform'd either way
+            rp = re.sub(r'^/+', '', rp)
+            
+            path = Element('txt-record')
+            path.text = 'rp=%s' % (rp)
+            service.append(path)
+
+            desc = Element('txt-record')
+            desc.text = 'note=%s' % (v.get('printer-info', p))
+            service.append(desc)
+
+            product = Element('txt-record')
+            product.text = 'product=(GPL Ghostscript)'
+            service.append(product)
+
+            state = Element('txt-record')
+            state.text = 'printer-state=%s' % (v.get('printer-state', 0))
+            service.append(state)
+
+            ptype = Element('txt-record')
+            ptype.text = 'printer-type=%s' % (hex(v.get('printer-type', 0)))
+            service.append(ptype)
+
+            if attrs.get('color-supported'):
+                color = Element('txt-record')
+                color.text = 'Color=T'
+                service.append(color)
+
+            if attrs.get('media-default') == 'iso_a4_210x297mm':
+                max_paper = Element('txt-record')
+                max_paper.text = 'PaperMax=legal-A4'
+                service.append(max_paper)
+
+            pdl = Element('txt-record')
+            fmts = []
+            defer = []
+
+            for a in attrs.get('document-format-supported', []):
+                if a in DOCUMENT_TYPES:
+                    if DOCUMENT_TYPES[a]:
+                        fmts.append(a)
                 else:
-                  rp = uri[2]
-                
-                re_match = re.match(r'^//(.*):(\d+)(/.*)', rp)
-                if re_match:
-                  rp = re_match.group(3)
-                
-                #Remove leading slashes from path
-                #TODO XXX FIXME I'm worried this will match broken urlparse
-                #results as well (for instance if they don't include a port)
-                #the xml would be malform'd either way
-                rp = re.sub(r'^/+', '', rp)
-                
-                path = Element('txt-record')
-                path.text = 'rp=%s' % (rp)
-                service.append(path)
+                    defer.append(a)
 
-                desc = Element('txt-record')
-                desc.text = 'note=%s' % (v['printer-info'])
-                service.append(desc)
+            if 'image/urf' not in fmts:
+                sys.stderr.write('image/urf is not in mime types, %s may not be available on ios6 (see https://github.com/tjfontaine/airprint-generate/issues/5)%s' % (p, os.linesep))
 
-                product = Element('txt-record')
-                product.text = 'product=(GPL Ghostscript)'
-                service.append(product)
+            fmts = ','.join(fmts+defer)
 
-                state = Element('txt-record')
-                state.text = 'printer-state=%s' % (v['printer-state'])
-                service.append(state)
+            dropped = []
 
-                ptype = Element('txt-record')
-                ptype.text = 'printer-type=%s' % (hex(v['printer-type']))
-                service.append(ptype)
+            # TODO XXX FIXME all fields should be checked for 255 limit
+            while len('pdl=%s' % (fmts)) >= 255:
+                (fmts, drop) = fmts.rsplit(',', 1)
+                dropped.append(drop)
 
-                if attrs['color-supported']:
-                    color = Element('txt-record')
-                    color.text = 'Color=T'
-                    service.append(color)
+            if len(dropped) and self.verbose:
+                sys.stderr.write('%s Losing support for: %s%s' % (p, ','.join(dropped), os.linesep))
 
-                if attrs['media-default'] == 'iso_a4_210x297mm':
-                    max_paper = Element('txt-record')
-                    max_paper.text = 'PaperMax=legal-A4'
-                    service.append(max_paper)
+            pdl.text = 'pdl=%s' % (fmts)
+            service.append(pdl)
 
-                pdl = Element('txt-record')
-                fmts = []
-                defer = []
-
-                for a in attrs['document-format-supported']:
-                    if a in DOCUMENT_TYPES:
-                        if DOCUMENT_TYPES[a]:
-                            fmts.append(a)
-                    else:
-                        defer.append(a)
-
-                if 'image/urf' not in fmts:
-                    sys.stderr.write('image/urf is not in mime types, %s may not be available on ios6 (see https://github.com/tjfontaine/airprint-generate/issues/5)%s' % (p, os.linesep))
-
-                fmts = ','.join(fmts+defer)
-
-                dropped = []
-
-                # TODO XXX FIXME all fields should be checked for 255 limit
-                while len('pdl=%s' % (fmts)) >= 255:
-                    (fmts, drop) = fmts.rsplit(',', 1)
-                    dropped.append(drop)
-
-                if len(dropped) and self.verbose:
-                    sys.stderr.write('%s Losing support for: %s%s' % (p, ','.join(dropped), os.linesep))
-
-                pdl.text = 'pdl=%s' % (fmts)
-                service.append(pdl)
-
-                if self.adminurl:
-                    admin = Element('txt-record')
-                    admin.text = 'adminurl=%s' % (v['printer-uri-supported'])
-                    service.append(admin)
-                
-                fname = '%s%s.service' % (self.prefix, p)
-                
-                if self.directory:
-                    fname = os.path.join(self.directory, fname)
-                
-                f = open(fname, 'w')
-
+            if self.adminurl:
+                admin = Element('txt-record')
+                admin.text = 'adminurl=%s' % (printer_uri)
+                service.append(admin)
+            
+            fname = '%s%s.service' % (self.prefix, p)
+            
+            if self.directory:
+                fname = os.path.join(self.directory, fname)
+            
+            with open(fname, 'w') as service_file:
                 if etree:
-                    tree.write(f, pretty_print=True, xml_declaration=True, encoding="UTF-8")
+                    tree.write(service_file, pretty_print=True, xml_declaration=True, encoding="UTF-8")
                 else:
                     xmlstr = tostring(tree.getroot())
                     doc = parseString(xmlstr)
                     dt= minidom.getDOMImplementation('').createDocumentType('service-group', None, 'avahi-service.dtd')
                     doc.insertBefore(dt, doc.documentElement)
-                    doc.writexml(f)
-                f.close()
-                
-                if self.verbose:
-                    sys.stderr.write('Created: %s%s' % (fname, os.linesep))
+                    doc.writexml(service_file)
+            
+            if self.verbose:
+                sys.stderr.write('Created: %s%s' % (fname, os.linesep))
 
 if __name__ == '__main__':
     parser = optparse.OptionParser()

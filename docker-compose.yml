@@ -1,15 +1,15 @@
-version: '3.5.0-2'
-
 services:
   airprint:
-    container_name: airprint
-    image: royzheng/brother_dcp_t4:latest
+    container_name: t426w-airprint
+    image: royzheng/t426w:avahi
+    platform: linux/amd64
     build: .
-    restart: always
-    network_mode: "host"
+    restart: unless-stopped
+    network_mode: host
     environment:
       CUPSADMIN: admin
       CUPSPASSWORD: admin
+      TZ: Asia/Shanghai
     volumes:
       - "./services:/services"
       - "./config:/config"

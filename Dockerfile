@@ -1,34 +1,38 @@
 FROM ubuntu:jammy
+
+ARG DEBIAN_FRONTEND=noninteractive
+
 LABEL maintainer="Roy Zheng"
 LABEL version="3.5.0-2"
-LABEL description="AIRPRINT FROM SYNOLOGY DSM 7 (HP, SAMSUNG, ETC)"
+LABEL description="Brother DCP-T426W AirPrint"
 
-RUN apt-get update && apt-get install -y \
-  vim \
-	locales \
-	brother-lpr-drivers-extra brother-cups-wrapper-extra \
-	printer-driver-splix \
-	printer-driver-gutenprint \
-	gutenprint-doc \
-	gutenprint-locales \
-	libgutenprint9 \
-	libgutenprint-doc \
-	ghostscript \
-	hplip \
-	cups \
-	cups-pdf \
-	cups-client \
-	cups-filters \
-	inotify-tools \
-	avahi-daemon \
-	avahi-discover \
-	python3 \
-	python3-dev \
-	python3-pip \
-	python3-cups \
-	wget \
-	rsync \
-  && apt-get clean \
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends \
+		brother-lpr-drivers-extra \
+		brother-cups-wrapper-extra \
+		printer-driver-splix \
+		printer-driver-gutenprint \
+		ghostscript \
+		gutenprint-locales \
+		hplip \
+		cups \
+		cups-pdf \
+		cups-client \
+		cups-filters \
+		inotify-tools \
+		avahi-daemon \
+		avahi-utils \
+		python3 \
+		python3-cups \
+		rsync \
+		tzdata \
+		ca-certificates \
+	&& apt-get clean \
+	&& rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends curl \
+	&& apt-get clean \
 	&& rm -rf /var/lib/apt/lists/*
 
 # This will use port 631
@@ -39,22 +43,14 @@ VOLUME /config
 VOLUME /services
 
 # Add scripts
-ADD root /
+COPY root/ /
 RUN chmod +x /root/*
-
-#Run Script
-CMD ["/root/run_cups.sh"]
 
 COPY deb/*.deb /tmp/
 
-RUN dpkg -x /tmp/dcpt420wpdrv-3.5.0-1.i386.deb / \
-    && dpkg -i --force-all /tmp/dcpt420wpdrv-3.5.0-1a.i386.deb \
-    && dpkg -x /tmp/dcpt425wpdrv-3.5.0-1.i386.deb / \
-    && dpkg -i --force-all /tmp/dcpt425wpdrv-3.5.0-1a.i386.deb \
+RUN mkdir -p /var/spool/lpd \
     && dpkg -x /tmp/dcpt426wpdrv-3.5.0-2.i386.deb / \
     && dpkg -i --force-all /tmp/dcpt426wpdrv-3.5.0-2a.i386.deb \
-    && dpkg -x /tmp/dcpt428wpdrv-3.5.0-1.i386.deb / \
-    && dpkg -i --force-all /tmp/dcpt428wpdrv-3.5.0-1a.i386.deb \
     && dpkg -i --force-all /tmp/brscan5-1.3.3-0.amd64.deb \
     && dpkg -i --force-all /tmp/brscan-skey-0.3.2-0.amd64.deb \
     && rm -rf /tmp/*.deb
@@ -73,3 +69,6 @@ RUN sed -i 's/Listen localhost:631/Listen *:631/' /etc/cups/cupsd.conf && \
 ENV CUPSADMIN="admin" \
     CUPSPASSWORD="admin" \
     TZ="Asia/Shanghai"
+
+# Run Script
+CMD ["/root/run_cups.sh"]

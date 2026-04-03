@@ -1,23 +1,44 @@
-VERSION=3.5.0-2
+VERSION := 3.5.0-2
+IMAGE := royzheng/t426w:latest
+PLATFORM := linux/amd64
+CONTAINER := t426w-airprint
+CONFIG_DIR := $(CURDIR)/config
+SERVICES_DIR := $(CURDIR)/services
+CUPSADMIN ?= admin
+CUPSPASSWORD ?= admin
+TZ ?= Asia/Shanghai
+
+.PHONY: build start stop restart push bash
 
 build:
-	docker stop brother_dcp_t4 || true
-	docker container prune -f
-	docker build -t royzheng/brother_dcp_t4:latest --progress=plain  . 2>&1 | tee build.log
+	mkdir -p "$(CONFIG_DIR)" "$(SERVICES_DIR)"
+	docker rm -f $(CONTAINER) >/dev/null 2>&1 || true
+	docker build --platform $(PLATFORM) -t $(IMAGE) --progress=plain . 2>&1 | tee build.log
 
 start:
-	docker run -d -p 631:631 --name brother_dcp_t4 royzheng/brother_dcp_t4:latest
+	mkdir -p "$(CONFIG_DIR)" "$(SERVICES_DIR)"
+	docker rm -f $(CONTAINER) >/dev/null 2>&1 || true
+	docker run -d \
+		--name $(CONTAINER) \
+		--restart unless-stopped \
+		--net host \
+		--platform $(PLATFORM) \
+		-v "$(SERVICES_DIR):/services" \
+		-v "$(CONFIG_DIR):/config" \
+		-e CUPSADMIN="$(CUPSADMIN)" \
+		-e CUPSPASSWORD="$(CUPSPASSWORD)" \
+		-e TZ="$(TZ)" \
+		$(IMAGE)
 
 stop:
-	docker stop brother_dcp_t4 || true
-	docker container prune -f
+	docker rm -f $(CONTAINER) >/dev/null 2>&1 || true
 
 restart:
-	make stop
-	make start
+	$(MAKE) stop
+	$(MAKE) start
 
 push:
-	docker push royzheng/brother_dcp_t4:latest
+	docker push $(IMAGE)
 
 bash:
-	docker exec -it brother_dcp_t4 bash
+	docker exec -it $(CONTAINER) bash

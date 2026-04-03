@@ -1,26 +1,37 @@
-# royzheng/brother_dcp_t4 [docker-image](https://hub.docker.com/r/royzheng/brother_dcp_t4)
+# royzheng/t426w:avahi
 
-# Working on Synology DSM 7 (!!!) and AMD64
+# Working on Synology DSM 7 and AMD64
 
-Fork from [quadportnick/docker-cups-airprint](https://github.com/quadportnick/docker-cups-airprint)
+Forked from [quadportnick/docker-cups-airprint](https://github.com/quadportnick/docker-cups-airprint).
 
-This Ubuntu-based Docker image runs a CUPS instance that is meant as an AirPrint relay for printers that are already on the network but not AirPrint capable.
-* `Included drivers HP, Samsung, Canon, Xerox, etc.`
-* `Support Brother DCP-T420W, DCP-T425W, DCP-T426W, DCP-T428W`
+This Ubuntu-based image runs CUPS plus Avahi so a Brother DCP-T426W can be exposed as an AirPrint printer on the local network.
 
-## Easy run command (use username and password: admin/admin):
-```
-sudo docker run -d --name t426w \
-     --restart unless-stopped  --net host\
+## Highlights
+
+* `Support Brother DCP-T426W`
+* `Image/tag: royzheng/t426w:avahi`
+* `Platform: linux/amd64`
+* `Timezone via TZ, for example Asia/Shanghai`
+
+## Quick start
+
+```bash
+sudo docker run -d --name t426w-airprint \
+     --restart unless-stopped \
+     --platform linux/amd64 \
+     --net host \
      -v /volume1/docker/t426w/services:/services \
      -v /volume1/docker/t426w/config:/config \
      -e CUPSADMIN="admin" \
      -e CUPSPASSWORD="admin" \
      -e TZ="Asia/Shanghai" \
-     royzheng/brother_dcp_t4:latest
+     royzheng/t426w:avahi
 ```
 
-### Before run docker conteiner on DSM7 Synology run this commands in ssh terminal(if your airplay service is running)):
+## Synology DSM 7 notes
+
+Before starting the container on DSM 7, stop Synology's own print services if they are running:
+
 * `sudo synosystemctl stop cupsd`
 * `sudo synosystemctl stop cups-lpd`
 * `sudo synosystemctl stop cups-service-handler`
@@ -28,12 +39,24 @@ sudo docker run -d --name t426w \
 * `sudo synosystemctl disable cups-lpd`
 * `sudo synosystemctl disable cups-service-handler`
 
-### Add and setup printer:
-* CUPS will be configurable at http://[host ip]:631 using the CUPSADMIN/CUPSPASSWORD.
-* Make sure you select `Share This Printer` when configuring the printer in CUPS.
-* ***After configuring your printer, you need to close the web browser for at least 60 seconds. CUPS will not write the config files until it detects the connection is closed for as long as a minute.***
+After AirPrint is configured and verified, you can enable the Synology services again if needed:
 
-### Brother DCP-T426W cups setup example(DCP-T420W, DCP-T425W, DCP-T428W also like this)
+* `sudo synosystemctl start cupsd`
+* `sudo synosystemctl start cups-lpd`
+* `sudo synosystemctl start cups-service-handler`
+* `sudo synosystemctl enable cupsd`
+* `sudo synosystemctl enable cups-lpd`
+* `sudo synosystemctl enable cups-service-handler`
+
+## Configure the printer
+
+* Open CUPS at `http://<host-ip>:631`
+* Log in with `CUPSADMIN` and `CUPSPASSWORD`
+* Make sure to check `Share This Printer`
+* After saving printer settings, close the browser for at least 60 seconds so CUPS flushes the config files
+
+### Brother DCP-T426W setup example
+
 * **Setup1**
 ![Setup1](https://raw.githubusercontent.com/royzheng/brother_dcp_t4/main/images/setup1.jpg "setup1")
 * **Setup2**
@@ -47,37 +70,35 @@ sudo docker run -d --name t426w \
 * **Setup6**
 ![Setup6](https://raw.githubusercontent.com/royzheng/brother_dcp_t4/main/images/setup6.jpg "setup6")
 
-### After setup and testing AirPrint, you can back run on services. (maybe you will need restart nas)
-* `sudo synosystemctl start cupsd`
-* `sudo synosystemctl start cups-lpd`
-* `sudo synosystemctl start cups-service-handler`
-* `sudo synosystemctl anable cupsd`
-* `sudo synosystemctl anable cups-lpd`
-* `sudo synosystemctl anable cups-service-handler`
+## Volumes
 
-## Manual Configuration
+* `/config`: persistent CUPS configuration
+* `/services`: generated Avahi service files
 
-### Volumes:
-* `/config`: where the persistent printer configs will be stored
-* `/services`: where the Avahi service files will be generated
+## Environment variables
 
-### Variables:
-* `CUPSADMIN`: the CUPS admin user you want created - default is `admin` if unspecified
-* `CUPSPASSWORD`: the password for the CUPS admin user - default is `admin` username if unspecified
-* `TZ`: time zone
+* `CUPSADMIN`: CUPS admin user, default `admin`
+* `CUPSPASSWORD`: CUPS admin password, default follows `CUPSADMIN`
+* `TZ`: timezone name, for example `Asia/Shanghai`; invalid values fall back to `Etc/UTC`
 
-### Ports/Network:
-* Must be run on host network. This is required to support multicasting which is needed for Airprint.
+## Networking
 
+Must run with host networking because AirPrint discovery relies on multicast.
 
-### Example run env command:
+## Compose
+
+```bash
+docker compose up -d --build
 ```
-docker run -d --name airprint \
-     --restart unless-stopped  --net host\
-     -v <your services dir>:/services \
-     -v <your config dir>:/config \
-     -e CUPSADMIN="admin" \
-     -e CUPSPASSWORD="admin" \
-     -e TZ="Asia/Shanghai" \
-     royzheng/brother_dcp_t4:latest
+
+The included `docker-compose.yml` is already pinned to `royzheng/t426w:avahi`, `linux/amd64`, host networking, and `TZ=Asia/Shanghai`.
+
+## Make helpers
+
+```bash
+make build
+make start
+make bash
 ```
+
+`make start` uses host networking, mounts local `./config` and `./services`, and runs the image as `linux/amd64`.
